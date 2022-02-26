@@ -11,16 +11,16 @@ import javax.servlet.http.*;
 import com.oreilly.servlet.*; //MultipartRequest,Base64Encoder,Base64Decoder
 import com.oreilly.servlet.multipart.DefaultFileRenamePolicy;
 
-import com.hp.hpl.jena.ontology.*;
-import com.hp.hpl.jena.rdf.model.*; //Model
-import com.hp.hpl.jena.util.FileManager;
-import com.hp.hpl.jena.util.iterator.*; //ExtendedIterator
-import com.hp.hpl.jena.vocabulary.*;
-import com.hp.hpl.jena.reasoner.*; //Reasoner, ReasonerRegistry, InfModel
-import com.hp.hpl.jena.query.* ; //Query,QueryFactory,QueryExecution,ResultSetFormatter,QueryParseException,ARQ
-import com.hp.hpl.jena.sparql.*; //Sparql
-import com.hp.hpl.jena.sparql.core.*; //Prologue
-
+import org.apache.jena.Jena; // VERSION
+import org.apache.jena.rdf.model.*; // Model
+import org.apache.jena.ontology.*; // OntModel
+import org.apache.jena.reasoner.*; // Reasoner, ReasonerRegistry, InfModel
+import org.apache.jena.query.*; //ARQ, Dataset, DatasetFactory
+import org.apache.jena.util.*; // FileManager,
+import org.apache.jena.util.iterator.*; // ExtendedIterator
+import org.apache.jena.sparql.*; //Sparql
+import org.apache.jena.sparql.core.*; //Prologue
+//import org.apache.jena.sparql.engine.http.*; //QueryEngineHTTP
 import org.apache.jena.atlas.logging.*; //LogCtl
 
 import edu.indiana.sice.idsl.jena.*;
@@ -71,81 +71,81 @@ public class naese_servlet extends HttpServlet
   public void doPost(HttpServletRequest request,HttpServletResponse response)
       throws IOException,ServletException
   {
-    serverport=request.getServerPort();
-    SERVERNAME=request.getServerName();
-    if (SERVERNAME.equals("localhost")) SERVERNAME=InetAddress.getLocalHost().getHostAddress();
-    REMOTEHOST=request.getHeader("X-Forwarded-For"); // client (original)
+    serverport = request.getServerPort();
+    SERVERNAME = request.getServerName();
+    if (SERVERNAME.equals("localhost")) SERVERNAME = InetAddress.getLocalHost().getHostAddress();
+    REMOTEHOST = request.getHeader("X-Forwarded-For"); // client (original)
     if (REMOTEHOST!=null)
     {
-      String[] addrs=Pattern.compile(",").split(REMOTEHOST);
-      if (addrs.length>0) REMOTEHOST=addrs[addrs.length-1];
+      String[] addrs = Pattern.compile(",").split(REMOTEHOST);
+      if (addrs.length>0) REMOTEHOST = addrs[addrs.length-1];
     }
     else
     {
-      REMOTEHOST=request.getRemoteAddr(); // client (may be proxy)
+      REMOTEHOST = request.getRemoteAddr(); // client (may be proxy)
     }
-    rb=ResourceBundle.getBundle("LocalStrings",request.getLocale());
+    rb = ResourceBundle.getBundle("LocalStrings", request.getLocale());
 
     MultipartRequest mrequest=null;
     if (request.getMethod().equalsIgnoreCase("POST"))
     {
-      try { mrequest=new MultipartRequest(request,UPLOADDIR,10*1024*1024,"ISO-8859-1", new DefaultFileRenamePolicy()); }
-      catch (IOException lEx) { this.getServletContext().log("Not a valid MultipartRequest.",lEx); }
+      try { mrequest = new MultipartRequest(request, UPLOADDIR, 10*1024*1024, "ISO-8859-1", new DefaultFileRenamePolicy()); }
+      catch (IOException lEx) { this.getServletContext().log("Not a valid MultipartRequest.", lEx); }
     }
 
     // main logic:
-    boolean ok=initialize(request,mrequest);
+    boolean ok = initialize(request, mrequest);
 
     ArrayList<String> cssincludes = new ArrayList<String>(Arrays.asList(CONTEXTPATH+"/css/biocomp.css"));
-    ArrayList<String> jsincludes = new ArrayList<String>(Arrays.asList(CONTEXTPATH+"/js/biocomp.js",CONTEXTPATH+"/js/ddtip.js"));
+    ArrayList<String> jsincludes = new ArrayList<String>(Arrays.asList(CONTEXTPATH+"/js/biocomp.js", CONTEXTPATH+"/js/ddtip.js"));
 
     if (!ok)
     {
       response.setContentType("text/html");
-      out=response.getWriter();
+      out = response.getWriter();
       out.println(HtmUtils.HeaderHtm(APPNAME, jsincludes, cssincludes, JavaScript(), "", color1, request, null));
-      out.println(HtmUtils.FooterHtm(errors,true));
+      out.println(HtmUtils.FooterHtm(errors, true));
       return;
     }
     else if (request.getParameter("help")!=null)	// GET method, help=TRUE
     {
       response.setContentType("text/html");
-      out=response.getWriter();
+      out = response.getWriter();
       out.println(HtmUtils.HeaderHtm(APPNAME, jsincludes, cssincludes, JavaScript(), "", color1, request, null));
       out.println(HelpHtm());
-      out.println(HtmUtils.FooterHtm(errors,true));
+      out.println(HtmUtils.FooterHtm(errors, true));
     }
     else if (!RQTXT.isEmpty())
     {
       response.setContentType("text/html");
-      out=response.getWriter();
+      out = response.getWriter();
       out.println(HtmUtils.HeaderHtm(APPNAME, jsincludes, cssincludes, JavaScript(), "", color1, request, null));
-      out.println(FormHtm(mrequest,response,params));
+      out.println(FormHtm(mrequest, response, params));
       String rqtxt=RQTXT;
-      if (params.isChecked("hideheaders")) rqtxt=RQ_HEADERS+"\n"+RQTXT;
+      if (params.isChecked("hideheaders")) rqtxt = RQ_HEADERS+"\n"+RQTXT;
       try {
         Query query = QueryFactory.create(rqtxt);
         Prologue prologue = query.getPrologue();
         QueryExecution qe = QueryExecutionFactory.create(query, RDFMOD);
         ResultSet results = qe.execSelect();
-        String result_txt = ResultSetFormatter.asText(results,prologue); //abbreviate IRIs
-        outputs.add("<pre>"+result_txt.replaceAll("<","&lt;").replaceAll(">","&gt;")+"</pre>");
+        String result_txt = ResultSetFormatter.asText(results, prologue); //abbreviate IRIs
+        outputs.add("<pre>"+result_txt.replaceAll("<","&lt;").replaceAll(">", "&gt;")+"</pre>");
         qe.close();
         out.println(HtmUtils.OutputHtm(outputs));
       }
       catch (QueryParseException e) {
         errors.add("ERROR:"+e.getMessage());
       }
-      out.println(HtmUtils.FooterHtm(errors,true));
+      out.println(HtmUtils.FooterHtm(errors, true));
     }
     else
     {
       response.setContentType("text/html");
-      out=response.getWriter();
+      out = response.getWriter();
       out.println(HtmUtils.HeaderHtm(APPNAME, jsincludes, cssincludes, JavaScript(), "", color1, request, null));
-      out.println(FormHtm(mrequest,response,params));
+      out.println(FormHtm(mrequest, response, params));
       out.println("<SCRIPT>go_init(window.document.mainform)</SCRIPT>");
-      out.println(HtmUtils.FooterHtm(errors,true));
+      out.println(HtmUtils.FooterHtm(errors, true));
     }
   }
   /////////////////////////////////////////////////////////////////////////////
@@ -154,30 +154,30 @@ public class naese_servlet extends HttpServlet
   private boolean initialize(HttpServletRequest request, MultipartRequest mrequest)
       throws IOException, ServletException
   {
-    SERVLETNAME=this.getServletName();
+    SERVLETNAME = this.getServletName();
     this.outputs = new ArrayList<String>();
     this.errors = new ArrayList<String>();
     this.params = new HttpParams();
     this.RQTXT="";
 
-    String logo_htm="<TABLE CELLSPACING=5 CELLPADDING=5><TR><TD>";
-    String imghtm=("<IMG BORDER=0 HEIGHT=\"60\" SRC=\"images/iu_logo.png\">");
-    String tiphtm=(APPNAME+" web app from IU SOIC.");
-    String href=("http://soic.indiana.edu");
+    String logo_htm = "<TABLE CELLSPACING=5 CELLPADDING=5><TR><TD>";
+    String imghtm = ("<IMG BORDER=0 HEIGHT=\"60\" SRC=\"images/iu_logo.png\">");
+    String tiphtm = (APPNAME+" web app from IU SICE.");
+    String href = ("https://sice.indiana.edu");
     logo_htm+=(HtmUtils.HtmTipper(imghtm, tiphtm, href, 200, "white"));
     logo_htm+="</TD><TD>";
-    imghtm=("<IMG BORDER=0 SRC=\"images/jena-logo-jumbotron.png\">");
-    tiphtm=("Apache Jena");
-    href=("https://jena.apache.org/");
+    imghtm = ("<IMG BORDER=0 SRC=\"images/jena-logo-jumbotron.png\">");
+    tiphtm = ("Apache Jena");
+    href = ("https://jena.apache.org/");
     logo_htm+=(HtmUtils.HtmTipper(imghtm, tiphtm, href, 200, "white"));
     logo_htm+="</TD></TR></TABLE>";
     errors.add("<CENTER>"+logo_htm+"</CENTER>");
 
     //Create webapp-specific log dir if necessary:
-    File dout=new File(LOGDIR);
+    File dout = new File(LOGDIR);
     if (!dout.exists())
     {
-      boolean ok=dout.mkdir();
+      boolean ok = dout.mkdir();
       System.err.println("LOGDIR creation "+(ok?"succeeded":"failed")+": "+LOGDIR);
       if (!ok)
       {
@@ -186,8 +186,8 @@ public class naese_servlet extends HttpServlet
       }
     }
 
-    String logpath=LOGDIR+"/"+SERVLETNAME+".log";
-    logfile=new File(logpath);
+    String logpath = LOGDIR+"/"+SERVLETNAME+".log";
+    logfile = new File(logpath);
     if (!logfile.exists())
     {
       try {
@@ -198,8 +198,8 @@ public class naese_servlet extends HttpServlet
         errors.add("ERROR: Cannot create log file:"+e.getMessage());
         return false;
       }
-      logfile.setWritable(true,true);
-      PrintWriter out_log=new PrintWriter(logfile);
+      logfile.setWritable(true, true);
+      PrintWriter out_log = new PrintWriter(logfile);
       out_log.println("date\tip\tN"); 
       out_log.flush();
       out_log.close();
@@ -209,7 +209,7 @@ public class naese_servlet extends HttpServlet
       errors.add("ERROR: Log file not writable.");
       return false;
     }
-    BufferedReader buff=new BufferedReader(new FileReader(logfile));
+    BufferedReader buff = new BufferedReader(new FileReader(logfile));
     if (buff==null)
     {
       errors.add("ERROR: Cannot open log file.");
@@ -222,24 +222,24 @@ public class naese_servlet extends HttpServlet
     while ((line=buff.readLine())!=null)
     {
       ++n_lines;
-      String[] fields=Pattern.compile("\\t").split(line);
+      String[] fields = Pattern.compile("\\t").split(line);
       if (n_lines==2) startdate=fields[0];
     }
-    Calendar calendar=Calendar.getInstance();
+    Calendar calendar = Calendar.getInstance();
     if (n_lines>2)
     {
-      calendar.set(Integer.parseInt(startdate.substring(0,4)),
-               Integer.parseInt(startdate.substring(4,6))-1,
-               Integer.parseInt(startdate.substring(6,8)),
-               Integer.parseInt(startdate.substring(8,10)),
-               Integer.parseInt(startdate.substring(10,12)),0);
+      calendar.set(Integer.parseInt(startdate.substring(0, 4)),
+               Integer.parseInt(startdate.substring(4, 6))-1,
+               Integer.parseInt(startdate.substring(6, 8)),
+               Integer.parseInt(startdate.substring(8, 10)),
+               Integer.parseInt(startdate.substring(10, 12)), 0);
 
-      DateFormat df=DateFormat.getDateInstance(DateFormat.FULL,Locale.US);
+      DateFormat df = DateFormat.getDateInstance(DateFormat.FULL,Locale.US);
       errors.add("since "+df.format(calendar.getTime())+", times used: "+(n_lines-1));
     }
 
     calendar.setTime(new java.util.Date());
-    DATESTR=String.format("%04d%02d%02d%02d%02d",
+    DATESTR = String.format("%04d%02d%02d%02d%02d",
       calendar.get(Calendar.YEAR),
       calendar.get(Calendar.MONTH)+1,
       calendar.get(Calendar.DAY_OF_MONTH),
@@ -248,7 +248,7 @@ public class naese_servlet extends HttpServlet
 
     for (Enumeration e=request.getParameterNames(); e.hasMoreElements(); ) //GET
     {
-      String key=(String)e.nextElement();
+      String key =( String)e.nextElement();
       if (request.getParameter(key)!=null) params.setVal(key,request.getParameter(key));
     }
 
@@ -269,7 +269,7 @@ public class naese_servlet extends HttpServlet
     }
     errors.add("RDF statement count: "+i_stmt);
 
-    errors.add("Jena version: "+jena.version.VERSION);
+    errors.add("Jena version: "+Jena.VERSION);
     errors.add("Jena-ARQ version: "+ARQ.VERSION);
 
     if (params.isChecked("verbose"))
@@ -280,16 +280,16 @@ public class naese_servlet extends HttpServlet
 
     for (Enumeration e=mrequest.getParameterNames(); e.hasMoreElements(); ) //POST
     {
-      String key=(String)e.nextElement();
+      String key =( String)e.nextElement();
       if (mrequest.getParameter(key)!=null) params.setVal(key,mrequest.getParameter(key));
     }
 
-    String fname="infile";
-    File fin=mrequest.getFile(fname);
+    String fname =" infile";
+    File fin = mrequest.getFile(fname);
     if (fin!=null)
     {
       {
-        BufferedReader br=new BufferedReader(new FileReader(fin));
+        BufferedReader br = new BufferedReader(new FileReader(fin));
         RQTXT="";
         while ((line=br.readLine())!=null) RQTXT+=(line+"\n");
       }
@@ -297,7 +297,7 @@ public class naese_servlet extends HttpServlet
     }
     else
     {
-      RQTXT=params.getVal("rqtxt");
+      RQTXT = params.getVal("rqtxt");
     }
     return true;
   }
@@ -306,11 +306,11 @@ public class naese_servlet extends HttpServlet
 	HttpParams params)
       throws IOException
   {
-    String exquery_menu="<SELECT NAME=\"exquery\" onChange=\"fix_exquery(this.form)\">\n";
+    String exquery_menu ="<SELECT NAME=\"exquery\" onChange=\"fix_exquery(this.form)\">\n";
     for (int i=1;i<=RQ_EXAMPLES.size();++i)
       exquery_menu+=("<OPTION VALUE=\""+i+"\">Example "+i+"\n");
     exquery_menu+=("</SELECT>");
-    exquery_menu=exquery_menu.replace("\""+params.getVal("exquery")+"\">", "\""+params.getVal("exquery")+"\" SELECTED>");
+    exquery_menu = exquery_menu.replace("\""+params.getVal("exquery")+"\">", "\""+params.getVal("exquery")+"\" SELECTED>");
 
     String htm=
     ("<FORM NAME=\"mainform\" METHOD=POST ACTION=\""+response.encodeURL(SERVLETNAME)+"\"")
@@ -425,17 +425,17 @@ public class naese_servlet extends HttpServlet
   public void init(ServletConfig conf) throws ServletException
   {
     super.init(conf);
-    CONTEXT=getServletContext();	// inherited method
-    CONTEXTPATH=CONTEXT.getContextPath();
+    CONTEXT = getServletContext();	// inherited method
+    CONTEXTPATH = CONTEXT.getContextPath();
     //CONFIG=conf;
-    APPNAME=conf.getInitParameter("APPNAME");
-    if (APPNAME==null) APPNAME=this.getServletName();
-    UPLOADDIR=conf.getInitParameter("UPLOADDIR");
+    APPNAME = conf.getInitParameter("APPNAME");
+    if (APPNAME==null) APPNAME = this.getServletName();
+    UPLOADDIR = conf.getInitParameter("UPLOADDIR");
     if (UPLOADDIR==null)
       throw new ServletException("Please supply UPLOADDIR parameter.");
-    DBNAME=conf.getInitParameter("DBNAME");
+    DBNAME = conf.getInitParameter("DBNAME");
     if (DBNAME==null) DBNAME="NAESE";
-    RDFFILE=CONTEXT.getRealPath("")+"/data/"+conf.getInitParameter("RDFFILE");
+    RDFFILE = CONTEXT.getRealPath("")+"/data/"+conf.getInitParameter("RDFFILE");
     if (RDFFILE==null)
       throw new ServletException("Please supply RDFFILE parameter.");
 
@@ -445,13 +445,13 @@ public class naese_servlet extends HttpServlet
     if (instr==null) { throw new ServletException("RDFFILE not found: "+RDFFILE); }
     String fext = RDFFILE.substring(1+RDFFILE.lastIndexOf('.'));
     String dlang = (fext.equalsIgnoreCase("ttl")?"TTL":(fext.equalsIgnoreCase("n3")?"N3":"RDF/XML"));
-    try { RDFMOD.read(instr,"",dlang); } //arg2=base_uri, arg3=lang
+    try { RDFMOD.read(instr, "", dlang); } //arg2=base_uri, arg3=lang
     catch (Exception e) { CONTEXT.log("ERROR: "+e.getMessage()); }
-    SPARQL_DIR=CONTEXT.getRealPath("")+"/"+conf.getInitParameter("SPARQL_DIR");
+    SPARQL_DIR = CONTEXT.getRealPath("")+"/"+conf.getInitParameter("SPARQL_DIR");
     if (SPARQL_DIR==null) 
       throw new ServletException("Please supply SPARQL_DIR parameter.");
-    LOGDIR=conf.getInitParameter("LOGDIR");
-    if (LOGDIR==null) LOGDIR="/tmp"+CONTEXTPATH+"_logs";
+    LOGDIR = conf.getInitParameter("LOGDIR");
+    if (LOGDIR==null) LOGDIR ="/ tmp"+CONTEXTPATH+"_logs";
     try { N_MAX=Integer.parseInt(conf.getInitParameter("N_MAX")); }
     catch (Exception e) { N_MAX=100; }
 
@@ -541,6 +541,6 @@ public class naese_servlet extends HttpServlet
   public void doGet(HttpServletRequest request,HttpServletResponse response)
       throws IOException, ServletException
   {
-    doPost(request,response);
+    doPost(request, response);
   }
 }
